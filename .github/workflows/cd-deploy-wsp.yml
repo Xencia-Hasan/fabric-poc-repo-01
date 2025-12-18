@@ -1,0 +1,51 @@
+name: Deploy to Fabric UAT Workspace
+
+on:
+  push:
+    branches:
+      - uat
+  workflow_dispatch:
+# REQUIRED for OIDC token issuance
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install Fabric CLI
+        run: pip install ms-fabric-cli
+      - name: Fabric CLI Login
+        run: |
+          fab config set encryption_fallback_enabled true
+          fab auth login -u "${{ secrets.AZURE_CLIENT_ID }}" -p "${{ secrets.AZURE_CLIENT_SECRET }}" --tenant "${{ secrets.AZURE_TENANT_ID }}"
+            
+      - name: Deploy artifacts to Fabric Workspace
+        env:
+          WORKSPACE_ID: ${{ secrets.FABRIC_UAT_WORKSPACE_ID }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -e
+          echo "Updating Fabric workspace from Git"
+          echo "Workspace: $WORKSPACE_ID"
+          echo "Commit: $COMMIT_SHA"
+
+          fab api -X post \
+            "workspaces/$WORKSPACE_ID/git/updateFromGit" \
+            -i "{
+              \"remoteCommitHash\": \"$COMMIT_SHA\",
+              \"conflictResolution\": {
+                \"conflictResolutionType\": \"Workspace\",
+                \"conflictResolutionPolicy\": \"PreferWorkspace\"
+              },
+              \"options\": {
+                \"allowOverrideItems\": true
+              }
+            }"
+
+            echo "UpdateFromGit triggered successfully"
+      - name: Finish
+        run: echo "Fabric CD completed successfully"
+ 
